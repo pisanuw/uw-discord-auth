@@ -1,0 +1,11 @@
+# Ruff configuration. Pyflakes (F) catches real errors (undefined names, unused
+# imports); pycodestyle E/W catch syntax-adjacent issues. Line length is relaxed
+# to avoid churning the upstream-authored app over long template strings.
+line-length = 120
+target-version = "py310"
+
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # line too long: long Discord message/template strings are intentional
+]

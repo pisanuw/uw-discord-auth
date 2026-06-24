@@ -5,6 +5,9 @@ from uwdiscord.app import app as flask_app
 @pytest.fixture
 def client():
     flask_app.config["TESTING"] = True
+    # The test client talks http, so a Secure session cookie would not round-trip;
+    # relax it here only (production keeps Secure on via OAUTHLIB_INSECURE_TRANSPORT).
+    flask_app.config["SESSION_COOKIE_SECURE"] = False
     with flask_app.test_client() as c:
         yield c
 
@@ -52,14 +55,27 @@ def test_login_stores_oauth_state_in_session(client):
 
 
 def test_login_redirects_to_discord_authorization_url(client):
-    """login() redirect must point at Discord's OAuth2 endpoint."""
+    """login() redirect must point at Discord's current OAuth2 endpoint."""
     response = client.get("/login")
     assert response.status_code == 302
-    assert "discordapp.com" in response.headers["Location"]
+    assert "discord.com/api/oauth2/authorize" in response.headers["Location"]
 
 
 def test_login_stores_redirect_param(client):
     """login() should preserve the redirect query param in the session."""
     response = client.get("/login?redirect=/some/path")
+    assert response.status_code == 302
     with client.session_transaction() as sess:
         assert sess.get("redirect") == "/some/path"
+
+
+# --- API currency: guard against regressing to the retired Discord API ---
+
+def test_uses_current_discord_api_base():
+    """The app must target the live Discord API (v10 on discord.com), not the
+    retired v6 / legacy discordapp.com domain."""
+    from uwdiscord import app as appmod
+    assert appmod.DISCORD_API_BASE == "https://discord.com/api/v10"
+    assert "discordapp.com" not in appmod.DISCORD_API_BASE
+    assert "discordapp.com" not in appmod.DISCORD_TOKEN_URL
+    assert "discordapp.com" not in appmod.DISCORD_AUTHORIZE_URL

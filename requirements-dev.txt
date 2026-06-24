@@ -1,1 +1,3 @@
-pytest
+# Development and CI tooling (pinned for reproducible runs).
+pytest==9.1.1
+ruff==0.15.19

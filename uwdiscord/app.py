@@ -6,9 +6,35 @@ from config import config
 from oauthlib.oauth2.rfc6749.errors import InvalidGrantError
 from requests_oauthlib import OAuth2Session
 
+# Discord API endpoints. Discord retired API v6; v10 is the current version, and
+# discord.com is the canonical domain (discordapp.com is the legacy domain).
+DISCORD_API_VERSION = "v10"
+DISCORD_API_BASE = "https://discord.com/api/" + DISCORD_API_VERSION
+DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token"
+DISCORD_AUTHORIZE_URL = "https://discord.com/api/oauth2/authorize"
+
+# Placeholder values shipped in config.example.py. Refuse to boot on them so a
+# real deployment cannot accidentally run with a guessable session secret.
+_PLACEHOLDER_SECRETS = {"", "blah", "stuff", "changeme", "secret"}
+
 app = Flask(__name__)
 
-app.secret_key = config["app-secret"]
+_app_secret = config.get("app-secret")
+if not _app_secret or _app_secret in _PLACEHOLDER_SECRETS:
+    raise RuntimeError(
+        "config['app-secret'] is missing or set to a placeholder value. "
+        "Set a strong, random secret in config.py before starting the app."
+    )
+app.secret_key = _app_secret
+
+# Harden the session cookie. Secure is on by default and relaxed only when
+# OAUTHLIB_INSECURE_TRANSPORT is set, which is exactly the local-dev http case
+# (see run.py). HttpOnly and SameSite=Lax are Flask defaults, set explicitly.
+app.config.update(
+    SESSION_COOKIE_SECURE=os.environ.get("OAUTHLIB_INSECURE_TRANSPORT") != "1",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
 
 def get_guilds_config():
     result = {}
@@ -18,7 +44,7 @@ def get_guilds_config():
 
 def json_or_text(response):
     text = response.text
-    if response.headers['content-type'] == 'application/json':
+    if response.headers.get('content-type', '').startswith('application/json'):
         return response.json()
     return text
 
@@ -33,10 +59,10 @@ def discordapi_request(verb, url, **kwargs):
     data = None
     if 'data' in kwargs:
         data = kwargs['data']
-    if 'json' in kwargs and kwargs["json"] != False:
+    if 'json' in kwargs and kwargs["json"]:
         headers['Content-Type'] = 'application/json'
         data = json.dumps(data)
-    url_formatted = "https://discordapp.com/api/v6" + url
+    url_formatted = DISCORD_API_BASE + url
     if data and "payload_json" in data:
         if "Content-Type" in headers:
             del headers["Content-Type"]
@@ -89,7 +115,7 @@ def make_authenticated_session(token=None, state=None, scope=None):
             'client_id': config['client-id'],
             'client_secret': config['client-secret'],
         },
-        auto_refresh_url="https://discordapp.com/api/oauth2/token",
+        auto_refresh_url=DISCORD_TOKEN_URL,
         token_updater=update_user_token,
     )
 
@@ -97,8 +123,12 @@ def discordapiuser_request(endpoint):
     token = session['discord_token']
     discord = make_authenticated_session(token=token)
     try:
-        req = discord.get("https://discordapp.com/api/v6{}".format(endpoint))
-    except InvalidGrantError as ex:
+        req = discord.get("{}{}".format(DISCORD_API_BASE, endpoint))
+    except InvalidGrantError:
+        app.logger.warning(
+            "Discord OAuth token rejected (InvalidGrantError) for endpoint %s; aborting 401",
+            endpoint, exc_info=True,
+        )
         abort(401)
     return req
 
@@ -144,13 +174,16 @@ def callback():
         return redirect(url_for('logout', error="discord_error {}".format(request.values.get('error'))))
     discord = make_authenticated_session(state=state)
     discord_token = discord.fetch_token(
-        "https://discordapp.com/api/oauth2/token",
+        DISCORD_TOKEN_URL,
         client_secret=config['client-secret'],
         authorization_response=request.url)
     if not discord_token:
         return redirect(url_for('logout', error="discord_user_token_fetch_error"))
     session['discord_token'] = discord_token
-    user = discordapiuser_get_current_authenticated_user()
+    # Validate the freshly issued token against Discord; this aborts (401/4xx)
+    # if the token cannot fetch the user, so it must run even though the result
+    # is unused on this path.
+    discordapiuser_get_current_authenticated_user()
     if session["redirect"]:
         redir = session["redirect"]
         session['redirect'] = None
@@ -163,7 +196,7 @@ def login():
     scope = ['identify']
     discord = make_authenticated_session(scope=scope)
     authorization_url, state = discord.authorization_url(
-        "https://discordapp.com/api/oauth2/authorize",
+        DISCORD_AUTHORIZE_URL,
         access_type="offline"
     )
     session['oauth2_state'] = state

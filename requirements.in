@@ -1,0 +1,5 @@
+# Direct runtime dependencies (abstract). Compile to the pinned requirements.txt
+# lockfile with: pip-compile requirements.in -o requirements.txt
+flask
+requests
+requests-oauthlib

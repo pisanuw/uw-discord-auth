@@ -1,0 +1,25 @@
+Options -Indexes
+
+<FilesMatch "\.(htaccess)$">
+Order allow,deny
+Deny from all
+</FilesMatch>
+
+SetEnvIf Request_URI (/|\d{5,}|/static/.*)$ noauth=1
+
+AuthType Shibboleth
+<IfVersion < 2.4>
+  ShibCompatWith24 on
+</IfVersion>
+ShibRequireSession on
+ShibRequestSetting redirectToSSL 443
+
+Order Deny,Allow
+Satisfy any
+Deny from all
+require shib-session
+Allow from env=noauth
+
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^(.*)$ /jkzhang/uw-discord-auth/application.cgi/$1 [L]

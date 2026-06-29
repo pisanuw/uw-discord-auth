@@ -13,3 +13,5 @@ Format: `YYYY-MM-DD [type] description` (max 200 chars). Types: decision, plan, 
 2026-06-24 [code] Added GitHub Actions CI (ruff + pytest, Python 3.10-3.13) on push and PR; added ruff.toml
 2026-06-24 [code] Pinned dependencies: requirements.in compiled to a fully-pinned requirements.txt lock; pinned dev tools
 2026-06-24 [doc] README: added CI badge, provenance/credits to Jeremy Zhang, development/test instructions; updated dev portal link
+
+2026-06-28 [code] Fixed CI ModuleNotFoundError(uwdiscord): added pytest.ini with pythonpath=. so `pytest` console script finds repo root (CI ran `pytest`, not `python -m pytest`)
